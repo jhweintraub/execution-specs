@@ -250,6 +250,8 @@ def sreturn_(evm: Evm) -> None:
         evm.memory
     )
 
+    evm.pc += Uint(1)
+
     evm.running = False
 
     # PROGRAM COUNTER
@@ -280,6 +282,8 @@ def mreturn_(evm: Evm) -> None:
     evm.output = memory_read_bytes(
         evm.memory, memory_start_position, memory_size
     )
+
+    evm.pc += Uint(1)
 
     evm.running = False
 
