@@ -79,3 +79,11 @@ unshipped EIPs, even withdrawn and non-viable proposals.
 | [EIP-7620](https://eips.ethereum.org/EIPS/eip-7620)                    | 0xEC   | EOFCREATE          | Create from EOF contained initcode                                           |
 | [EIP-7620](https://eips.ethereum.org/EIPS/eip-7620)                    | 0xED   | TXCREATE           | Create from transaction contained initcode (removed from EIP-7620)           |
 | [EIP-7620](https://eips.ethereum.org/EIPS/eip-7620)                    | 0xEE   | RETURNCONTRACT     | Contract to be created, references EOF data                                  |
+| [EIP-7877](https://eips.ethereum.org/EIPS/eip-7877)                    | 0xF6   | TRETURN            | Return data directly from transient without first writing to memory          |
+| [EIP-7877](https://eips.ethereum.org/EIPS/eip-7877)                    | 0xF7   | SRETURN            | Return data directly from storage without first requiring a write to memory  |
+| [EIP-7877](https://eips.ethereum.org/EIPS/eip-7877)                    | 0xF8   | RRETURN            | Return data directly from existing return data                               |
+| [EIP-7877](https://eips.ethereum.org/EIPS/eip-7877)                    | 0xF3   | MRETURN            | Rename of existing RETURN opcode                                             |
+
+
+
+
