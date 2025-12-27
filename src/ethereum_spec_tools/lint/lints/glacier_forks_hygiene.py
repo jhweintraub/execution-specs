@@ -3,9 +3,12 @@ Glacier Fork Hygiene Lint
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 Ensures that the glacier forks have changes only in BOMB_DELAY_BLOCKS.
 """
+
 import ast
 import sys
 from typing import Dict, List, Sequence
+
+from typing_extensions import override
 
 from ethereum_spec_tools.forks import Hardfork
 from ethereum_spec_tools.lint import (
@@ -93,13 +96,11 @@ class GlacierForksHygiene(Lint):
                 )
                 continue
 
-            current_node = self._parse(all_current[file], _Visitor(), "items")
-            previous_node = self._parse(
-                all_previous[file], _Visitor(), "items"
-            )
+            current_node = self._parse(all_current[file], _Visitor()).items
+            previous_node = self._parse(all_previous[file], _Visitor()).items
 
             diagnostics += self.compare(
-                fork_name, file, current_node, previous_node  # type: ignore
+                fork_name, file, current_node, previous_node
             )
 
         return diagnostics
@@ -193,21 +194,23 @@ class _Visitor(ast.NodeVisitor):
         for item in module.__dict__["body"]:
             self.visit(item)
 
+    @override
     def visit_Import(self, import_: ast.Import) -> None:
         """
-        Visit an Import
+        Visit an Import.
         """
-        pass
+        del import_
 
+    @override
     def visit_ImportFrom(self, import_from: ast.ImportFrom) -> None:
         """
-        Visit an Import From
+        Visit an Import From.
         """
-        pass
+        del import_from
 
     def visit_Expr(self, expr: ast.Expr) -> None:
         """
-        Visit an Expression
+        Visit an Expression.
         """
         # This is a way to identify comments in the current specs code
         # ignore comments

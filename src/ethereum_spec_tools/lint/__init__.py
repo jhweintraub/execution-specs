@@ -1,6 +1,5 @@
 """
-Lints
-^^^^^
+Lints.
 
 Checks specific to the Ethereum specification source code.
 """
@@ -12,7 +11,7 @@ import pkgutil
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from itertools import zip_longest
-from typing import Generator, List, Optional, Sequence, Tuple
+from typing import Generator, List, Optional, Sequence, Tuple, TypeVar
 
 from ..forks import Hardfork
 
@@ -78,6 +77,9 @@ class Diagnostic:
     message: str
 
 
+V = TypeVar("V", bound=ast.NodeVisitor)
+
+
 class Lint(metaclass=ABCMeta):
     """
     A single check which may be performed against the specifications.
@@ -96,17 +98,16 @@ class Lint(metaclass=ABCMeta):
             All known hardforks.
         position :
             The particular hardfork to lint.
+
         """
 
-    def _parse(
-        self, source: str, visitor: ast.NodeVisitor, attr: str
-    ) -> Sequence[str]:
+    def _parse(self, source: str, visitor: V) -> V:
         """
-        Walks the source string and extracts a sequence of identifiers.
+        Walks the source string.
         """
         parsed = ast.parse(source)
         visitor.visit(parsed)
-        return getattr(visitor, attr)
+        return visitor
 
 
 class Linter:

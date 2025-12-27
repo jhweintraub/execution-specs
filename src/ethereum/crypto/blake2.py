@@ -1,7 +1,5 @@
-"""
-The Blake2 Implementation
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-"""
+"""The Blake2 Implementation."""
+
 import struct
 from dataclasses import dataclass
 from typing import Final, List, Tuple
@@ -21,6 +19,7 @@ def spit_le_to_uint(data: bytes, start: int, num_words: int) -> List[Uint]:
         Position to start the extraction
     num_words:
         The number of words to be extracted
+
     """
     words = []
     for i in range(num_words):
@@ -61,7 +60,7 @@ class Blake2:
     def w_R1(self) -> Uint:
         """
         (w - R1) value for a given Blake2 flavor.
-        Used in the function G
+        Used in the function G.
         """
         return self.w - self.R1
 
@@ -69,7 +68,7 @@ class Blake2:
     def w_R2(self) -> Uint:
         """
         (w - R2) value for a given Blake2 flavor.
-        Used in the function G
+        Used in the function G.
         """
         return self.w - self.R2
 
@@ -77,7 +76,7 @@ class Blake2:
     def w_R3(self) -> Uint:
         """
         (w - R3) value for a given Blake2 flavor.
-        Used in the function G
+        Used in the function G.
         """
         return self.w - self.R3
 
@@ -85,7 +84,7 @@ class Blake2:
     def w_R4(self) -> Uint:
         """
         (w - R4) value for a given Blake2 flavor.
-        Used in the function G
+        Used in the function G.
         """
         return self.w - self.R4
 
@@ -140,6 +139,7 @@ class Blake2:
         ----------
         data :
             The bytes data that has been passed in the message.
+
         """
         rounds = Uint.from_be_bytes(data[:4])
         h = spit_le_to_uint(data, 4, 8)
@@ -153,8 +153,11 @@ class Blake2:
         self, v: List, a: Uint, b: Uint, c: Uint, d: Uint, x: Uint, y: Uint
     ) -> List:
         """
-        The mixing function used in Blake2
-        https://datatracker.ietf.org/doc/html/rfc7693#section-3.1
+        The mixing function used in Blake2.
+
+        See [RFC 7693] for more details.
+
+        [RFC 7693]: https://datatracker.ietf.org/doc/html/rfc7693#section-3.1
 
         Parameters
         ----------
@@ -164,6 +167,7 @@ class Blake2:
             Indexes within v of the words to be mixed.
         x, y :
             The two input words for the mixing.
+
         """
         v[a] = (v[a] + v[b] + x) % self.max_word
         v[d] = ((v[d] ^ v[a]) >> self.R1) ^ (
@@ -197,8 +201,7 @@ class Blake2:
         f: bool,
     ) -> bytes:
         """
-        'F Compression' from section 3.2 of RFC 7693:
-        https://tools.ietf.org/html/rfc7693#section-3.2
+        'F Compression' from section 3.2 of RFC 7693.
 
         Parameters
         ----------
@@ -212,6 +215,7 @@ class Blake2:
             Offset counters. 2 unsigned 64-bit little-endian words
         f:
             The final block indicator flag. An 8-bit word
+
         """
         # Initialize local work vector v[0..15]
         v = [Uint(0)] * 16

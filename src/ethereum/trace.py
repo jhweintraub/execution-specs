@@ -18,7 +18,9 @@ See [EIP-3155] for more details on EVM traces.
 
 import enum
 from dataclasses import dataclass
-from typing import Optional, Protocol, Union
+from typing import Optional, Protocol
+
+from ethereum_types.bytes import Bytes
 
 from ethereum.exceptions import EthereumException
 
@@ -41,7 +43,7 @@ class TransactionEnd:
     Total gas consumed by this transaction.
     """
 
-    output: bytes
+    output: Bytes
     """
     Return value or revert reason of the outermost frame of execution.
     """
@@ -51,10 +53,10 @@ class TransactionEnd:
     The exception, if any, that caused the transaction to fail.
 
     See [`ethereum.exceptions`] as well as fork-specific modules like
-    [`ethereum.frontier.vm.exceptions`][vm] for details.
+    [`ethereum.forks.frontier.vm.exceptions`][vm] for details.
 
     [`ethereum.exceptions`]: ref:ethereum.exceptions
-    [vm]: ref:ethereum.frontier.vm.exceptions
+    [vm]: ref:ethereum.forks.frontier.vm.exceptions
     """
 
 
@@ -64,7 +66,7 @@ class PrecompileStart:
     Trace event that is triggered before executing a precompile.
     """
 
-    address: bytes
+    address: Bytes
     """
     Precompile that is about to be executed.
     """
@@ -88,9 +90,9 @@ class OpStart:
     Opcode that is about to be executed.
 
     Will be an instance of a fork-specific type like, for example,
-    [`ethereum.frontier.vm.instructions.Ops`][ops].
+    [`ethereum.forks.frontier.vm.instructions.Ops`][ops].
 
-    [ops]: ref:ethereum.frontier.vm.instructions.Ops
+    [ops]: ref:ethereum.forks.frontier.vm.instructions.Ops
     """
 
 
@@ -112,11 +114,11 @@ class OpException:
     Exception that was raised.
 
     See [`ethereum.exceptions`] as well as fork-specific modules like
-    [`ethereum.frontier.vm.exceptions`][vm] for examples of exceptions that
-    might be raised.
+    [`ethereum.forks.frontier.vm.exceptions`][vm] for examples of exceptions
+    that might be raised.
 
     [`ethereum.exceptions`]: ref:ethereum.exceptions
-    [vm]: ref:ethereum.frontier.vm.exceptions
+    [vm]: ref:ethereum.forks.frontier.vm.exceptions
     """
 
 
@@ -131,9 +133,9 @@ class EvmStop:
     Last opcode executed.
 
     Will be an instance of a fork-specific type like, for example,
-    [`ethereum.frontier.vm.instructions.Ops`][ops].
+    [`ethereum.forks.frontier.vm.instructions.Ops`][ops].
 
-    [ops]: ref:ethereum.frontier.vm.instructions.Ops
+    [ops]: ref:ethereum.forks.frontier.vm.instructions.Ops
     """
 
 
@@ -149,17 +151,17 @@ class GasAndRefund:
     """
 
 
-TraceEvent = Union[
-    TransactionStart,
-    TransactionEnd,
-    PrecompileStart,
-    PrecompileEnd,
-    OpStart,
-    OpEnd,
-    OpException,
-    EvmStop,
-    GasAndRefund,
-]
+TraceEvent = (
+    TransactionStart
+    | TransactionEnd
+    | PrecompileStart
+    | PrecompileEnd
+    | OpStart
+    | OpEnd
+    | OpException
+    | EvmStop
+    | GasAndRefund
+)
 """
 All possible types of events that an [`EvmTracer`] is expected to handle.
 
@@ -170,15 +172,13 @@ All possible types of events that an [`EvmTracer`] is expected to handle.
 def discard_evm_trace(
     evm: object,
     event: TraceEvent,
-    trace_memory: bool = False,
-    trace_stack: bool = True,
-    trace_return_data: bool = False,
 ) -> None:
     """
     An [`EvmTracer`] that discards all events.
 
     [`EvmTracer`]: ref:ethereum.trace.EvmTracer
     """
+    del evm, event
 
 
 class EvmTracer(Protocol):
@@ -197,38 +197,56 @@ class EvmTracer(Protocol):
         self,
         evm: object,
         event: TraceEvent,
-        /,
-        trace_memory: bool = False,
-        trace_stack: bool = True,
-        trace_return_data: bool = False,
     ) -> None:
         """
         Call `self` as a function, recording a trace event.
 
         `evm` is the live state of the EVM, and will be a fork-specific type
-        like [`ethereum.frontier.vm.Evm`][evm].
+        like [`ethereum.forks.frontier.vm.Evm`][evm].
 
         `event`, a [`TraceEvent`], is the reason why the tracer was triggered.
-
-        `trace_memory` requests a full memory dump in the resulting trace.
-
-        `trace_stack` requests the full stack in the resulting trace.
-
-        `trace_return_data` requests that return data be included in the
-        resulting trace.
 
         See [`discard_evm_trace`] for an example function implementing this
         protocol.
 
         [`discard_evm_trace`]: ref:ethereum.trace.discard_evm_trace
-        [evm]: ref:ethereum.frontier.vm.Evm
+        [evm]: ref:ethereum.forks.frontier.vm.Evm
         [`TraceEvent`]: ref:ethereum.trace.TraceEvent
         """
+        raise NotImplementedError
 
 
-evm_trace: EvmTracer = discard_evm_trace
+_evm_trace: EvmTracer = discard_evm_trace
 """
 Active [`EvmTracer`] that is used for generating traces.
 
 [`EvmTracer`]: ref:ethereum.trace.EvmTracer
 """
+
+
+def set_evm_trace(tracer: EvmTracer) -> EvmTracer:
+    """
+    Change the active [`EvmTracer`] that is used for generating traces.
+
+    [`EvmTracer`]: ref:ethereum.trace.EvmTracer
+    """
+    global _evm_trace
+    old = _evm_trace
+    _evm_trace = tracer
+    return old
+
+
+def evm_trace(
+    evm: object,
+    event: TraceEvent,
+) -> None:
+    """
+    Emit a trace to the active [`EvmTracer`].
+
+    [`EvmTracer`]: ref:ethereum.trace.EvmTracer
+    """
+    global _evm_trace
+    _evm_trace(
+        evm,
+        event,
+    )

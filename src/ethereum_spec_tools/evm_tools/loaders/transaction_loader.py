@@ -14,13 +14,16 @@ from ethereum.utils.hexadecimal import (
     hex_to_bytes,
     hex_to_bytes32,
     hex_to_hash,
+    hex_to_u8,
+    hex_to_u64,
     hex_to_u256,
     hex_to_uint,
 )
+from ethereum_spec_tools.evm_tools.utils import parse_hex_or_int
 
 
-class UnsupportedTx(Exception):
-    """Exception for unsupported transactions"""
+class UnsupportedTxError(Exception):
+    """Exception for unsupported transactions."""
 
     def __init__(self, encoded_params: bytes, error_message: str) -> None:
         super().__init__(error_message)
@@ -30,7 +33,7 @@ class UnsupportedTx(Exception):
 
 class TransactionLoad:
     """
-    Class for loading transaction data from json file
+    Class for loading transaction data from json file.
     """
 
     def __init__(self, raw: Any, fork: Any) -> None:
@@ -73,9 +76,9 @@ class TransactionLoad:
     def json_to_access_list(self) -> Any:
         """Get the access list of the transaction."""
         access_list = []
-        for sublist in self.raw["accessList"]:
+        for sublist in self.raw.get("accessList", []):
             access_list.append(
-                (
+                self.fork.Access(
                     self.fork.hex_to_address(sublist.get("address")),
                     [
                         hex_to_bytes32(key)
@@ -84,6 +87,22 @@ class TransactionLoad:
                 )
             )
         return access_list
+
+    def json_to_authorizations(self) -> Any:
+        """Get the authorization list of the transaction."""
+        authorizations = []
+        for sublist in self.raw["authorizationList"]:
+            authorizations.append(
+                self.fork.Authorization(
+                    chain_id=hex_to_u256(sublist.get("chainId")),
+                    nonce=hex_to_u64(sublist.get("nonce")),
+                    address=self.fork.hex_to_address(sublist.get("address")),
+                    y_parity=hex_to_u8(sublist.get("v")),
+                    r=hex_to_u256(sublist.get("r")),
+                    s=hex_to_u256(sublist.get("s")),
+                )
+            )
+        return authorizations
 
     def json_to_max_priority_fee_per_gas(self) -> Uint:
         """Get the max priority fee per gas of the transaction."""
@@ -119,16 +138,16 @@ class TransactionLoad:
         return self.json_to_v()
 
     def json_to_r(self) -> U256:
-        """Get the r value of the transaction"""
+        """Get the r value of the transaction."""
         return hex_to_u256(self.raw.get("r"))
 
     def json_to_s(self) -> U256:
-        """Get the s value of the transaction"""
+        """Get the s value of the transaction."""
         return hex_to_u256(self.raw.get("s"))
 
     def get_parameters(self, tx_cls: Any) -> List:
         """
-        Extract all the transaction parameters from the json file
+        Extract all the transaction parameters from the json file.
         """
         parameters = []
         for field in fields(tx_cls):
@@ -136,32 +155,38 @@ class TransactionLoad:
         return parameters
 
     def get_legacy_transaction(self) -> Any:
-        """Return the approprtiate class for legacy transactions."""
+        """Return the appropriate class for legacy transactions."""
         if hasattr(self.fork, "LegacyTransaction"):
             return self.fork.LegacyTransaction
         else:
             return self.fork.Transaction
 
     def read(self) -> Any:
-        """Convert json transaction data to a transaction object"""
+        """Convert json transaction data to a transaction object."""
         if "type" in self.raw:
-            tx_type = self.raw.get("type")
-            if tx_type == "0x3":
+            tx_type = parse_hex_or_int(self.raw.get("type"), Uint)
+            if tx_type == Uint(4):
+                tx_cls = self.fork.SetCodeTransaction
+                tx_byte_prefix = b"\x04"
+            elif tx_type == Uint(3):
                 tx_cls = self.fork.BlobTransaction
                 tx_byte_prefix = b"\x03"
-            elif tx_type == "0x2":
+            elif tx_type == Uint(2):
                 tx_cls = self.fork.FeeMarketTransaction
                 tx_byte_prefix = b"\x02"
-            elif tx_type == "0x1":
+            elif tx_type == Uint(1):
                 tx_cls = self.fork.AccessListTransaction
                 tx_byte_prefix = b"\x01"
-            elif tx_type == "0x0":
+            elif tx_type == Uint(0):
                 tx_cls = self.get_legacy_transaction()
                 tx_byte_prefix = b""
             else:
                 raise ValueError(f"Unknown transaction type: {tx_type}")
         else:
-            if "maxFeePerBlobGas" in self.raw:
+            if "authorizationList" in self.raw:
+                tx_cls = self.fork.SetCodeTransaction
+                tx_byte_prefix = b"\x04"
+            elif "maxFeePerBlobGas" in self.raw:
                 tx_cls = self.fork.BlobTransaction
                 tx_byte_prefix = b"\x03"
             elif "maxFeePerGas" in self.raw:
@@ -178,6 +203,6 @@ class TransactionLoad:
         try:
             return tx_cls(*parameters)
         except Exception as e:
-            raise UnsupportedTx(
+            raise UnsupportedTxError(
                 tx_byte_prefix + rlp.encode(parameters), str(e)
             ) from e

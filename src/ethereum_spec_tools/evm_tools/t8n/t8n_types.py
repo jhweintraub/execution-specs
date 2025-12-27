@@ -1,19 +1,20 @@
 """
 Define the types used by the t8n tool.
 """
+
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-from ethereum_rlp import rlp
+from ethereum_rlp import Simple, rlp
 from ethereum_types.bytes import Bytes
 from ethereum_types.numeric import U64, U256, Uint
 
-from ethereum.crypto.hash import keccak256
+from ethereum.crypto.hash import Hash32, keccak256
 from ethereum.utils.hexadecimal import hex_to_bytes, hex_to_u256, hex_to_uint
 
-from ..loaders.transaction_loader import TransactionLoad, UnsupportedTx
-from ..utils import FatalException, secp256k1_sign
+from ..loaders.transaction_loader import TransactionLoad, UnsupportedTxError
+from ..utils import FatalError, encode_to_hex, secp256k1_sign
 
 if TYPE_CHECKING:
     from . import T8N
@@ -46,13 +47,13 @@ class Alloc:
                     data[address][key] = "0x" + hex(int(value))
 
         state = t8n.json_to_state(data)
-        if t8n.fork.fork_module == "dao_fork":
+        if t8n.fork.hardfork.short_name == "dao_fork":
             t8n.fork.apply_dao(state)
 
         self.state = state
 
     def to_json(self) -> Any:
-        """Encode the state to JSON"""
+        """Encode the state to JSON."""
         data = {}
         for address, account in self.state._main_trie._data.items():
             account_data: Dict[str, Any] = {}
@@ -85,19 +86,11 @@ class Txs:
     return a list of transactions.
     """
 
-    rejected_txs: Dict[int, str]
-    successful_txs: List[Any]
-    successful_receipts: List[Any]
-    all_txs: List[Any]
-    t8n: "T8N"
-    data: Any
-    rlp_input: bool
-
     def __init__(self, t8n: "T8N", stdin: Optional[Dict] = None):
         self.t8n = t8n
+        self.successfully_parsed: List[int] = []
+        self.transactions: List[Tuple[Uint, Any]] = []
         self.rejected_txs = {}
-        self.successful_txs = []
-        self.successful_receipts = []
         self.rlp_input = False
         self.all_txs = []
 
@@ -109,33 +102,28 @@ class Txs:
                 data = json.load(f)
 
         if data is None:
-            self.data = []
+            self.data: Simple = []
         elif isinstance(data, str):
             self.rlp_input = True
             self.data = rlp.decode(hex_to_bytes(data))
         else:
             self.data = data
 
-    @property
-    def transactions(self) -> Iterator[Tuple[int, Any]]:
-        """
-        Read the transactions file and return a list of transactions.
-        Can read from JSON or RLP.
-        """
         for idx, raw_tx in enumerate(self.data):
             try:
                 if self.rlp_input:
-                    yield idx, self.parse_rlp_tx(raw_tx)
+                    self.transactions.append(self.parse_rlp_tx(raw_tx))
+                    self.successfully_parsed.append(idx)
                 else:
-                    yield idx, self.parse_json_tx(raw_tx)
-            except UnsupportedTx as e:
+                    self.transactions.append(self.parse_json_tx(raw_tx))
+                    self.successfully_parsed.append(idx)
+            except UnsupportedTxError as e:
                 self.t8n.logger.warning(
-                    f"Unsupported transaction type {idx}: "
-                    f"{e.error_message}"
+                    f"Unsupported transaction type {idx}: {e.error_message}"
                 )
-                self.rejected_txs[
-                    idx
-                ] = f"Unsupported transaction type: {e.error_message}"
+                self.rejected_txs[idx] = (
+                    f"Unsupported transaction type: {e.error_message}"
+                )
                 self.all_txs.append(e.encoded_params)
             except Exception as e:
                 msg = f"Failed to parse transaction {idx}: {str(e)}"
@@ -149,7 +137,7 @@ class Txs:
         t8n = self.t8n
 
         tx_rlp = rlp.encode(raw_tx)
-        if t8n.fork.is_after_fork("ethereum.berlin"):
+        if t8n.fork.has_legacy_transaction:
             if isinstance(raw_tx, Bytes):
                 transaction = t8n.fork.decode_transaction(raw_tx)
                 self.all_txs.append(raw_tx)
@@ -192,44 +180,12 @@ class Txs:
         tx = TransactionLoad(raw_tx, t8n.fork).read()
         self.all_txs.append(tx)
 
-        if t8n.fork.is_after_fork("ethereum.berlin"):
+        if t8n.fork.has_decode_transaction:
             transaction = t8n.fork.decode_transaction(tx)
         else:
             transaction = tx
 
         return transaction
-
-    def add_transaction(self, tx: Any) -> None:
-        """
-        Add a transaction to the list of successful transactions.
-        """
-        if self.t8n.fork.is_after_fork("ethereum.berlin"):
-            self.successful_txs.append(self.t8n.fork.encode_transaction(tx))
-        else:
-            self.successful_txs.append(tx)
-
-    def get_tx_hash(self, tx: Any) -> bytes:
-        """
-        Get the transaction hash of a transaction.
-        """
-        if self.t8n.fork.is_after_fork("ethereum.berlin") and not isinstance(
-            tx, self.t8n.fork.LegacyTransaction
-        ):
-            return keccak256(self.t8n.fork.encode_transaction(tx))
-        else:
-            return keccak256(rlp.encode(tx))
-
-    def add_receipt(self, tx: Any, gas_consumed: Uint) -> None:
-        """
-        Add t8n receipt info for valid tx
-        """
-        tx_hash = self.get_tx_hash(tx)
-
-        data = {
-            "transactionHash": "0x" + tx_hash.hex(),
-            "gasUsed": hex(gas_consumed),
-        }
-        self.successful_receipts.append(data)
 
     def sign_transaction(self, json_tx: Any) -> None:
         """
@@ -249,14 +205,14 @@ class Txs:
             tx_decoded = tx
 
         secret_key = hex_to_uint(json_tx["secretKey"][2:])
-        if t8n.fork.is_after_fork("ethereum.berlin"):
-            Transaction = t8n.fork.LegacyTransaction
+        if t8n.fork.has_legacy_transaction:
+            Transaction = t8n.fork.LegacyTransaction  # noqa N806
         else:
-            Transaction = t8n.fork.Transaction
+            Transaction = t8n.fork.Transaction  # noqa N806
 
         v_addend: U256
         if isinstance(tx_decoded, Transaction):
-            if t8n.fork.is_after_fork("ethereum.spurious_dragon"):
+            if t8n.fork.has_signing_hash_155:
                 if protected:
                     signing_hash = t8n.fork.signing_hash_155(
                         tx_decoded, U64(1)
@@ -277,8 +233,11 @@ class Txs:
         elif isinstance(tx_decoded, t8n.fork.BlobTransaction):
             signing_hash = t8n.fork.signing_hash_4844(tx_decoded)
             v_addend = U256(0)
+        elif isinstance(tx_decoded, t8n.fork.SetCodeTransaction):
+            signing_hash = t8n.fork.signing_hash_7702(tx_decoded)
+            v_addend = U256(0)
         else:
-            raise FatalException("Unknown transaction type")
+            raise FatalError("Unknown transaction type")
 
         r, s, y = secp256k1_sign(signing_hash, int(secret_key))
         json_tx["r"] = hex(r)
@@ -291,7 +250,7 @@ class Txs:
 
 @dataclass
 class Result:
-    """Type that represents the result of a transition execution"""
+    """Type that represents the result of a transition execution."""
 
     difficulty: Any
     base_fee: Any
@@ -306,9 +265,87 @@ class Result:
     gas_used: Any = None
     excess_blob_gas: Optional[U64] = None
     blob_gas_used: Optional[Uint] = None
+    requests_hash: Optional[Hash32] = None
+    requests: Optional[List[Bytes]] = None
+    block_exception: Optional[str] = None
+
+    def get_receipts_from_output(
+        self,
+        t8n: Any,
+        block_output: Any,
+    ) -> List[Any]:
+        """
+        Get receipts from the transaction and receipts tries.
+        """
+        receipts: List[Any] = []
+        for key in block_output.receipt_keys:
+            tx = t8n.fork.trie_get(block_output.transactions_trie, key)
+            receipt = t8n.fork.trie_get(block_output.receipts_trie, key)
+
+            assert tx is not None
+            assert receipt is not None
+
+            tx_hash = t8n.fork.get_transaction_hash(tx)
+
+            if hasattr(t8n.fork, "decode_receipt"):
+                decoded_receipt = t8n.fork.decode_receipt(receipt)
+            else:
+                decoded_receipt = receipt
+
+            receipts.append((tx_hash, decoded_receipt))
+
+        return receipts
+
+    def update(self, t8n: "T8N", block_env: Any, block_output: Any) -> None:
+        """
+        Update the result after processing the inputs.
+        """
+        self.gas_used = block_output.block_gas_used
+        self.tx_root = t8n.fork.root(block_output.transactions_trie)
+        self.receipt_root = t8n.fork.root(block_output.receipts_trie)
+        self.bloom = t8n.fork.logs_bloom(block_output.block_logs)
+        self.logs_hash = keccak256(rlp.encode(block_output.block_logs))
+        self.state_root = t8n.fork.state_root(block_env.state)
+        self.receipts = self.get_receipts_from_output(t8n, block_output)
+
+        if hasattr(block_env, "base_fee_per_gas"):
+            self.base_fee = block_env.base_fee_per_gas
+
+        if hasattr(block_output, "withdrawals_trie"):
+            self.withdrawals_root = t8n.fork.root(
+                block_output.withdrawals_trie
+            )
+
+        if hasattr(block_env, "excess_blob_gas"):
+            self.excess_blob_gas = block_env.excess_blob_gas
+
+        if hasattr(block_output, "requests"):
+            self.requests = block_output.requests
+            self.requests_hash = t8n.fork.compute_requests_hash(self.requests)
+
+    def json_encode_receipts(self) -> Any:
+        """
+        Encode receipts to JSON.
+        """
+        receipts_json = []
+        for tx_hash, receipt in self.receipts:
+            receipt_dict = {"transactionHash": "0x" + tx_hash.hex()}
+
+            if hasattr(receipt, "succeeded"):
+                receipt_dict["succeeded"] = receipt.succeeded
+            else:
+                assert hasattr(receipt, "post_state")
+                receipt_dict["post_state"] = "0x" + receipt.post_state.hex()
+
+            receipt_dict["gasUsed"] = hex(receipt.cumulative_gas_used)
+            receipt_dict["bloom"] = "0x" + receipt.bloom.hex()
+
+            receipts_json.append(receipt_dict)
+
+        return receipts_json
 
     def to_json(self) -> Any:
-        """Encode the result to JSON"""
+        """Encode the result to JSON."""
         data = {}
 
         data["stateRoot"] = "0x" + self.state_root.hex()
@@ -340,12 +377,17 @@ class Result:
             for idx, error in self.rejected.items()
         ]
 
-        data["receipts"] = [
-            {
-                "transactionHash": item["transactionHash"],
-                "gasUsed": item["gasUsed"],
-            }
-            for item in self.receipts
-        ]
+        data["receipts"] = self.json_encode_receipts()
+
+        if self.requests_hash is not None:
+            assert self.requests is not None
+
+            data["requestsHash"] = encode_to_hex(self.requests_hash)
+            # T8N doesn't consider the request type byte to be part of the
+            # request
+            data["requests"] = [encode_to_hex(req) for req in self.requests]
+
+        if self.block_exception is not None:
+            data["blockException"] = self.block_exception
 
         return data

@@ -1,6 +1,5 @@
 """
-Utility Functions For Hexadecimal Strings
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Utility Functions For Hexadecimal Strings.
 
 .. contents:: Table of Contents
     :backlinks: none
@@ -11,8 +10,9 @@ Introduction
 
 Hexadecimal strings specific utility functions used in this specification.
 """
-from ethereum_types.bytes import Bytes, Bytes8, Bytes20, Bytes32, Bytes256
-from ethereum_types.numeric import U64, U256, Uint
+
+from ethereum_types.bytes import Bytes, Bytes8, Bytes32, Bytes256
+from ethereum_types.numeric import U8, U64, U256, Uint
 
 from ethereum.crypto.hash import Hash32
 
@@ -30,6 +30,7 @@ def has_hex_prefix(hex_string: str) -> bool:
     -------
     has_prefix : `bool`
         Boolean indicating whether the hex string has 0x prefix.
+
     """
     return hex_string.startswith("0x")
 
@@ -48,6 +49,7 @@ def remove_hex_prefix(hex_string: str) -> str:
     -------
     modified_hex_string : `str`
         The hexadecimal string with the 0x prefix removed if present.
+
     """
     if has_hex_prefix(hex_string):
         return hex_string[len("0x") :]
@@ -68,8 +70,9 @@ def hex_to_bytes(hex_string: str) -> Bytes:
     -------
     byte_stream : `bytes`
         Byte stream corresponding to the given hexadecimal string.
+
     """
-    return bytes.fromhex(remove_hex_prefix(hex_string))
+    return Bytes.fromhex(remove_hex_prefix(hex_string))
 
 
 def hex_to_bytes8(hex_string: str) -> Bytes8:
@@ -85,25 +88,9 @@ def hex_to_bytes8(hex_string: str) -> Bytes8:
     -------
     8_byte_stream : `Bytes8`
         8-byte stream corresponding to the given hexadecimal string.
+
     """
-    return Bytes8(bytes.fromhex(remove_hex_prefix(hex_string).rjust(16, "0")))
-
-
-def hex_to_bytes20(hex_string: str) -> Bytes20:
-    """
-    Convert hex string to 20 bytes.
-
-    Parameters
-    ----------
-    hex_string :
-        The hexadecimal string to be converted to 20 bytes.
-
-    Returns
-    -------
-    20_byte_stream : `Bytes20`
-        20-byte stream corresponding to the given hexadecimal string.
-    """
-    return Bytes20(bytes.fromhex(remove_hex_prefix(hex_string).rjust(20, "0")))
+    return Bytes8(Bytes.fromhex(remove_hex_prefix(hex_string).rjust(16, "0")))
 
 
 def hex_to_bytes32(hex_string: str) -> Bytes32:
@@ -119,8 +106,9 @@ def hex_to_bytes32(hex_string: str) -> Bytes32:
     -------
     32_byte_stream : `Bytes32`
         32-byte stream corresponding to the given hexadecimal string.
+
     """
-    return Bytes32(bytes.fromhex(remove_hex_prefix(hex_string).rjust(64, "0")))
+    return Bytes32(Bytes.fromhex(remove_hex_prefix(hex_string).rjust(64, "0")))
 
 
 def hex_to_bytes256(hex_string: str) -> Bytes256:
@@ -136,9 +124,10 @@ def hex_to_bytes256(hex_string: str) -> Bytes256:
     -------
     256_byte_stream : `Bytes256`
         256-byte stream corresponding to the given hexadecimal string.
+
     """
     return Bytes256(
-        bytes.fromhex(remove_hex_prefix(hex_string).rjust(512, "0"))
+        Bytes.fromhex(remove_hex_prefix(hex_string).rjust(512, "0"))
     )
 
 
@@ -155,8 +144,9 @@ def hex_to_hash(hex_string: str) -> Hash32:
     -------
     hash : `Hash32`
         32-byte stream obtained from the given hexadecimal string.
+
     """
-    return Hash32(bytes.fromhex(remove_hex_prefix(hex_string)))
+    return Hash32(Bytes.fromhex(remove_hex_prefix(hex_string)))
 
 
 def hex_to_uint(hex_string: str) -> Uint:
@@ -172,8 +162,27 @@ def hex_to_uint(hex_string: str) -> Uint:
     -------
     converted : `Uint`
         The unsigned integer obtained from the given hexadecimal string.
+
     """
     return Uint(int(remove_hex_prefix(hex_string), 16))
+
+
+def hex_to_u8(hex_string: str) -> U8:
+    """
+    Convert hex string to U8.
+
+    Parameters
+    ----------
+    hex_string :
+        The hexadecimal string to be converted to U8.
+
+    Returns
+    -------
+    converted : `U8`
+        The U8 integer obtained from the given hexadecimal string.
+
+    """
+    return U8(int(remove_hex_prefix(hex_string), 16))
 
 
 def hex_to_u64(hex_string: str) -> U64:
@@ -183,12 +192,13 @@ def hex_to_u64(hex_string: str) -> U64:
     Parameters
     ----------
     hex_string :
-        The hexadecimal string to be converted to U256.
+        The hexadecimal string to be converted to U64.
 
     Returns
     -------
     converted : `U64`
         The U64 integer obtained from the given hexadecimal string.
+
     """
     return U64(int(remove_hex_prefix(hex_string), 16))
 
@@ -206,5 +216,6 @@ def hex_to_u256(hex_string: str) -> U256:
     -------
     converted : `U256`
         The U256 integer obtained from the given hexadecimal string.
+
     """
     return U256(int(remove_hex_prefix(hex_string), 16))

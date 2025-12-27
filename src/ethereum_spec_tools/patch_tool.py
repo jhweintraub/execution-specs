@@ -1,5 +1,5 @@
 """
-Simple patching tool
+Simple patching tool.
 """
 
 import argparse
@@ -32,7 +32,7 @@ def main() -> None:
     options = parser.parse_args()
 
     if not options.prefix:
-        options.prefix = "src/ethereum/"
+        options.prefix = "src/ethereum/forks/"
 
     source_fork_path = options.prefix + options.source_fork[0]
 

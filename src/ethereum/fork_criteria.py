@@ -29,6 +29,7 @@ from abc import ABC, abstractmethod
 from typing import Final, Literal, SupportsInt, Tuple
 
 from ethereum_types.numeric import U256, Uint
+from typing_extensions import override
 
 
 @functools.total_ordering
@@ -130,6 +131,7 @@ class ByBlockNumber(ForkCriteria):
         self._internal = (ForkCriteria.BLOCK_NUMBER, int(block_number))
         self.block_number = Uint(int(block_number))
 
+    @override
     def check(self, block_number: Uint, timestamp: U256) -> bool:
         """
         Check whether the block number has been reached.
@@ -162,6 +164,7 @@ class ByTimestamp(ForkCriteria):
         self._internal = (ForkCriteria.TIMESTAMP, int(timestamp))
         self.timestamp = U256(timestamp)
 
+    @override
     def check(self, block_number: Uint, timestamp: U256) -> bool:
         """
         Check whether the timestamp has been reached.
@@ -185,9 +188,10 @@ class Unscheduled(ForkCriteria):
     Forks that have not been scheduled.
     """
 
-    def __init__(self) -> None:
-        self._internal = (ForkCriteria.UNSCHEDULED, 0)
+    def __init__(self, order_index: int = 0) -> None:
+        self._internal = (ForkCriteria.UNSCHEDULED, order_index)
 
+    @override
     def check(self, block_number: Uint, timestamp: U256) -> Literal[False]:
         """
         Unscheduled forks never occur; always returns `False`.
@@ -198,4 +202,4 @@ class Unscheduled(ForkCriteria):
         """
         String representation of this object.
         """
-        return "Unscheduled()"
+        return f"Unscheduled(order_index={self._internal[1]})"

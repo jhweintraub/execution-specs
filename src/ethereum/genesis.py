@@ -8,10 +8,11 @@ The genesis configuration for a chain is specified with a
 [`GenesisConfiguration`], and genesis blocks are created with
 [`add_genesis_block`].
 
-[`parent_hash`]: ref:ethereum.frontier.blocks.Header.parent_hash
+[`parent_hash`]: ref:ethereum.forks.frontier.blocks.Header.parent_hash
 [`GenesisConfiguration`]: ref:ethereum.genesis.GenesisConfiguration
 [`add_genesis_block`]: ref:ethereum.genesis.add_genesis_block
 """
+
 import json
 import pkgutil
 from dataclasses import dataclass
@@ -52,35 +53,35 @@ class GenesisConfiguration:
     """
     See [`difficulty`] (and subsequent forks.)
 
-    [`difficulty`]: ref:ethereum.frontier.blocks.Header.difficulty
+    [`difficulty`]: ref:ethereum.forks.frontier.blocks.Header.difficulty
     """
 
     extra_data: Bytes
     """
     See [`extra_data`] (and subsequent forks.)
 
-    [`extra_data`]: ref:ethereum.frontier.blocks.Header.extra_data
+    [`extra_data`]: ref:ethereum.forks.frontier.blocks.Header.extra_data
     """
 
     gas_limit: Uint
     """
     See [`gas_limit`] (and subsequent forks.)
 
-    [`gas_limit`]: ref:ethereum.frontier.blocks.Header.gas_limit
+    [`gas_limit`]: ref:ethereum.forks.frontier.blocks.Header.gas_limit
     """
 
     nonce: Bytes8
     """
     See [`nonce`] (and subsequent forks.)
 
-    [`nonce`]: ref:ethereum.frontier.blocks.Header.nonce
+    [`nonce`]: ref:ethereum.forks.frontier.blocks.Header.nonce
     """
 
     timestamp: U256
     """
     See [`timestamp`] (and subsequent forks.)
 
-    [`timestamp`]: ref:ethereum.frontier.blocks.Header.timestamp
+    [`timestamp`]: ref:ethereum.forks.frontier.blocks.Header.timestamp
     """
 
     initial_accounts: Dict[str, Dict]
@@ -143,7 +144,7 @@ class GenesisFork(
     """
 
     Address: Type[FixedBytes]
-    Account: Callable[[Uint, U256, bytes], AccountT]
+    Account: Callable[[Uint, U256, Bytes], AccountT]
     Trie: Callable[[bool, object], TrieT]
     Bloom: Type[FixedBytes]
     Header: Type[HeaderT]
@@ -199,7 +200,7 @@ def add_genesis_block(
 
     [EIP-161]: https://eips.ethereum.org/EIPS/eip-161
     """
-    Address: Type[FixedBytes] = hardfork.Address
+    Address: Type[FixedBytes] = hardfork.Address  # noqa N806
     assert issubclass(Address, FixedBytes)
 
     for hex_address, account in genesis.initial_accounts.items():
@@ -255,6 +256,9 @@ def add_genesis_block(
     if has_field(hardfork.Header, "parent_beacon_block_root"):
         fields["parent_beacon_block_root"] = Hash32(b"\0" * 32)
 
+    if has_field(hardfork.Header, "requests_hash"):
+        fields["requests_hash"] = Hash32(b"\0" * 32)
+
     genesis_header = hardfork.Header(**fields)
 
     block_fields = {
@@ -265,6 +269,9 @@ def add_genesis_block(
 
     if has_field(hardfork.Block, "withdrawals"):
         block_fields["withdrawals"] = ()
+
+    if has_field(hardfork.Block, "requests"):
+        block_fields["requests"] = ()
 
     genesis_block = hardfork.Block(**block_fields)
 

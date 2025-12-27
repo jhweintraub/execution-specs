@@ -37,6 +37,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 from docc.context import Context
@@ -51,9 +52,9 @@ from docc.source import Source
 from docc.transform import Transform
 from fladrif.apply import Apply
 from fladrif.treediff import Adapter, Operation, TreeMatcher
-from mistletoe import block_token as blocks  # type: ignore
+from mistletoe import block_token as blocks
 from mistletoe import span_token as spans
-from typing_extensions import assert_never
+from typing_extensions import assert_never, override
 
 from .forks import Hardfork
 
@@ -62,11 +63,11 @@ G = TypeVar("G")
 
 def pairwise(iterable: Iterable[G]) -> Iterable[Tuple[G, G]]:
     """
-    ABCDEFG --> AB BC CD DE EF FG
+    ABCDEFG --> AB BC CD DE EF FG.
     """
     a, b = tee(iterable)
     next(b, None)
-    return zip(a, b)
+    return zip(a, b, strict=False)
 
 
 class EthereumDiscover(Discover):
@@ -81,7 +82,8 @@ class EthereumDiscover(Discover):
     def __init__(self, config: PluginSettings) -> None:
         self.settings = config
         base = config.resolve_path(PurePath("src") / "ethereum")
-        self.forks = Hardfork.discover(base=base)
+        forks = base / "forks"
+        self.forks = Hardfork.discover([str(forks)])
 
     def discover(self, known: FrozenSet[T]) -> Iterator[Source]:
         """
@@ -464,45 +466,71 @@ class _DoccAdapter(Adapter[Node]):
             ):
                 return True
             case spans.RawText | spans.HTMLSpan:
+                assert isinstance(lhs, (spans.RawText, spans.HTMLSpan))
+                assert isinstance(rhs, (spans.RawText, spans.HTMLSpan))
                 return lhs.content == rhs.content
             case spans.Image:
+                assert isinstance(lhs, spans.Image)
+                assert isinstance(rhs, spans.Image)
                 return (
                     lhs.src == rhs.src
                     and lhs.title == rhs.title
                     and lhs.label == rhs.label
                 )
             case spans.Link:
+                assert isinstance(lhs, spans.Link)
+                assert isinstance(rhs, spans.Link)
                 return (
                     lhs.target == rhs.target
                     and lhs.title == rhs.title
                     and lhs.label == rhs.label
                 )
             case blocks.Heading | blocks.SetextHeading:
+                assert isinstance(lhs, (blocks.Heading, blocks.SetextHeading))
+                assert isinstance(rhs, (blocks.Heading, blocks.SetextHeading))
                 return lhs.level == rhs.level
             case blocks.CodeFence:
+                assert isinstance(lhs, blocks.CodeFence)
+                assert isinstance(rhs, blocks.CodeFence)
                 return (
                     lhs.language == rhs.language
                     and lhs.info_string == rhs.info_string
                 )
             case blocks.BlockCode:
+                assert isinstance(lhs, blocks.BlockCode)
+                assert isinstance(rhs, blocks.BlockCode)
                 return lhs.language == rhs.language
             case blocks.List:
+                assert isinstance(lhs, blocks.List)
+                assert isinstance(rhs, blocks.List)
                 return lhs.loose == rhs.loose and lhs.start == rhs.start
             case blocks.ListItem:
+                assert isinstance(lhs, blocks.ListItem)
+                assert isinstance(rhs, blocks.ListItem)
                 return (
                     lhs.loose == rhs.loose
                     and lhs.leader == rhs.leader
                     and lhs.prepend == rhs.prepend
                 )
             case blocks.Table:
+                assert isinstance(lhs, blocks.Table)
+                assert isinstance(rhs, blocks.Table)
                 return lhs.column_align == rhs.column_align
             case blocks.TableRow:
+                assert isinstance(lhs, blocks.TableRow)
+                assert isinstance(rhs, blocks.TableRow)
                 return lhs.row_align == rhs.row_align
             case blocks.TableCell:
+                assert isinstance(lhs, blocks.TableCell)
+                assert isinstance(rhs, blocks.TableCell)
                 return lhs.align == rhs.align
             case spans.LineBreak:
+                assert isinstance(lhs, spans.LineBreak)
+                assert isinstance(rhs, spans.LineBreak)
                 return lhs.soft == rhs.soft
             case blocks.Document:
+                assert isinstance(lhs, blocks.Document)
+                assert isinstance(rhs, blocks.Document)
                 if lhs.footnotes or rhs.footnotes:
                     logging.warning("markdown footnotes not implemented")
                 return True
@@ -530,30 +558,59 @@ class _DoccAdapter(Adapter[Node]):
             ):
                 result = ()
             case spans.RawText | spans.HTMLSpan:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(Union[spans.RawText, spans.HTMLSpan], token)
                 result = (token.content,)
             case spans.Link:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(spans.Link, token)
                 result = (token.target, token.title, token.label)
             case spans.Image:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(spans.Image, token)
                 result = (token.src, token.title, token.label)
             case blocks.Heading | blocks.SetextHeading:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(
+                    Union[blocks.Heading, blocks.SetextHeading],
+                    token,
+                )
                 result = (token.level,)
             case blocks.CodeFence:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(blocks.CodeFence, token)
                 result = (token.language, token.info_string)
             case blocks.BlockCode:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(blocks.BlockCode, token)
                 result = (token.language,)
             case blocks.List:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(blocks.List, token)
                 result = (token.loose, token.start)
             case blocks.ListItem:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(blocks.ListItem, token)
                 result = (token.loose, token.leader, token.prepend)
             case blocks.Table:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(blocks.Table, token)
                 result = (token.column_align,)
             case blocks.TableRow:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(blocks.TableRow, token)
                 result = (token.row_align,)
             case blocks.TableCell:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(blocks.TableCell, token)
                 result = (token.align,)
             case spans.LineBreak:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(spans.LineBreak, token)
                 result = (token.soft,)
             case blocks.Document:
+                # Typing error possibly related to python/mypy#17549
+                token = cast(blocks.Document, token)
                 if token.footnotes:
                     logging.warning("markdown footnotes not implemented")
                 result = ()
@@ -617,7 +674,10 @@ class _DoccAdapter(Adapter[Node]):
             rights = list(rhs.children)
             if len(lefts) != len(rights):
                 return False
-            return all(self.deep_equals(a, b) for a, b in zip(lefts, rights))
+            return all(
+                self.deep_equals(a, b)
+                for a, b in zip(lefts, rights, strict=True)
+            )
 
         elif isinstance(lhs, verbatim.Highlight):
             assert isinstance(rhs, verbatim.Highlight)
@@ -775,6 +835,7 @@ class _HardenVisitor(Visitor):
         parent.replace_child(flex, new_node)
         return Visit.TraverseChildren
 
+    @override
     def exit(self, node: Node) -> None:
         self._stack.pop()
 
@@ -908,11 +969,13 @@ class _DoccApply(Apply[Node]):
                     )
                 )
 
+    @override
     def equal(self, before: Sequence[Node], after: Sequence[Node]) -> None:
         parent = self.stack[-1]
         for node in after:
             parent.add(node)
 
+    @override
     def descend(self, before: Node, after: Node) -> None:
         parent = self.stack[-1]
         node = _DoccApply.FlexNode(after)
@@ -1000,6 +1063,7 @@ class _MinimizeDiffsVisitor(Visitor):
 
         return Visit.SkipChildren
 
+    @override
     def exit(self, node: Node) -> None:
         self._stack.pop()
 
@@ -1012,6 +1076,7 @@ def render_diff(
     """
     Render a DiffNode.
     """
+    del context
     assert isinstance(diff, DiffNode)
     assert isinstance(parent, (html.HTMLTag, html.HTMLRoot))
     parent_: Union[html.HTMLTag, html.HTMLRoot] = parent

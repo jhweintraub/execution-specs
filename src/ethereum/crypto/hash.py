@@ -1,6 +1,5 @@
 """
-Cryptographic Hash Functions
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Cryptographic Hash Functions.
 
 .. contents:: Table of Contents
     :backlinks: none
@@ -19,7 +18,7 @@ Hash32 = Bytes32
 Hash64 = Bytes64
 
 
-def keccak256(buffer: Bytes) -> Hash32:
+def keccak256(buffer: Bytes | bytearray) -> Hash32:
     """
     Computes the keccak256 hash of the input `buffer`.
 
@@ -32,12 +31,13 @@ def keccak256(buffer: Bytes) -> Hash32:
     -------
     hash : `ethereum.base_types.Hash32`
         Output of the hash function.
+
     """
     k = keccak.new(digest_bits=256)
     return Hash32(k.update(buffer).digest())
 
 
-def keccak512(buffer: Bytes) -> Hash64:
+def keccak512(buffer: Bytes | bytearray) -> Hash64:
     """
     Computes the keccak512 hash of the input `buffer`.
 
@@ -50,6 +50,7 @@ def keccak512(buffer: Bytes) -> Hash64:
     -------
     hash : `ethereum.base_types.Hash32`
         Output of the hash function.
+
     """
     k = keccak.new(digest_bits=512)
     return Hash64(k.update(buffer).digest())

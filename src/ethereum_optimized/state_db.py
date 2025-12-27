@@ -1,6 +1,5 @@
 """
-Optimized State
-^^^^^^^^^^^^^^^
+Optimized State.
 
 .. contents:: Table of Contents
     :backlinks: none
@@ -9,10 +8,12 @@ Optimized State
 Introduction
 ------------
 
-This module contains functions can be monkey patched into the fork's `state`
-module to use an optimized database backed state.
+This module contains functions that can be monkey patched into the fork's
+`state` module to use an optimized database backed state.
 """
+
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from importlib import import_module
 from typing import Any, ClassVar, Dict, List, Optional, Set, cast
@@ -35,7 +36,7 @@ from .utils import add_item
 
 Address = Bytes20
 Root = Hash32
-Account_ = Any
+Account_ = Any  # noqa N806
 
 
 class UnmodifiedType:
@@ -56,9 +57,11 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
     """
     patches: Dict[str, Any] = {}
 
-    types_mod = cast(Any, import_module("ethereum." + fork + ".fork_types"))
-    state_mod = cast(Any, import_module("ethereum." + fork + ".state"))
-    Account = types_mod.Account
+    types_mod = cast(
+        Any, import_module("ethereum.forks." + fork + ".fork_types")
+    )
+    state_mod = cast(Any, import_module("ethereum.forks." + fork + ".state"))
+    Account = types_mod.Account  # noqa N806
 
     has_transient_storage = hasattr(state_mod, "TransientStorage")
 
@@ -77,7 +80,7 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
         db: Any
         dirty_accounts: Dict[Address, Optional[Account_]]
         dirty_storage: Dict[Address, Dict[Bytes32, U256]]
-        destroyed_accounts: Set[Address]
+        destroyed_accounts: Dict[Address, Uint]
         tx_restore_points: List[int]
         journal: List[Any]
         created_accounts: Set[Address]
@@ -91,7 +94,7 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
             self.db = rust_pyspec_glue.DB(path)
             self.dirty_accounts = {}
             self.dirty_storage = {}
-            self.destroyed_accounts = set()
+            self.destroyed_accounts = defaultdict(lambda: Uint(0))
             self.tx_restore_points = []
             self.journal = []
             self.created_accounts = set()
@@ -106,16 +109,16 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
             return state_root(self) == state_root(other)
 
         def __enter__(self) -> "State":
-            """Support with statements"""
+            """Support with statements."""
             return self
 
         def __exit__(self, *args: Any) -> None:
-            """Support with statements"""
+            """Support with statements."""
             close_state(self)
 
     @add_item(patches)
     def close_state(state: State) -> None:
-        """Close a state, releasing all resources it holds"""
+        """Close a state, releasing all resources it holds."""
         state.db.close()
         state.db = None
         del state.dirty_accounts
@@ -126,12 +129,12 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
 
     @add_item(patches)
     def get_metadata(state: State, key: Bytes) -> Optional[Bytes]:
-        """Get a piece of metadata"""
+        """Get a piece of metadata."""
         return state.db.get_metadata(key)
 
     @add_item(patches)
     def set_metadata(state: State, key: Bytes, value: Bytes) -> None:
-        """Set a piece of metadata"""
+        """Set a piece of metadata."""
         return state.db.set_metadata(key, value)
 
     @add_item(patches)
@@ -184,14 +187,15 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
         """
         if state.tx_restore_points:
             raise Exception("In a non-db transaction")
-        for address in state.destroyed_accounts:
-            state.db.destroy_storage(address)
+        for address, count in state.destroyed_accounts.items():
+            if count:
+                state.db.destroy_storage(address)
         for address, account in state.dirty_accounts.items():
             state.db.set_account(address, account)
         for address, storage in state.dirty_storage.items():
             for key, value in storage.items():
                 state.db.set_storage(address, key, value)
-        state.destroyed_accounts = set()
+        state.destroyed_accounts.clear()
         state.dirty_accounts.clear()
         state.dirty_storage.clear()
 
@@ -205,7 +209,7 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
         state.db.rollback_mutable()
         state.dirty_accounts.clear()
         state.dirty_storage.clear()
-        state.destroyed_accounts = set()
+        state.destroyed_accounts.clear()
 
     def _begin_transaction(state: State) -> None:
         """
@@ -223,7 +227,7 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
             transient_storage: Optional[Any] = None,
         ) -> None:
             """
-            See `state`
+            See `state`.
             """
             _begin_transaction(state)
             if transient_storage is not None:
@@ -239,7 +243,7 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
         @add_item(patches)
         def begin_transaction(state: State) -> None:
             """
-            See `state`
+            See `state`.
             """
             _begin_transaction(state)
 
@@ -291,8 +295,10 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
                     state.dirty_storage[item[0]][item[1]] = item[2]
             elif type(item[1]) is dict:
                 # Restore storage that was destroyed by `destroy_storage()`
-                state.destroyed_accounts.remove(item[0])
-                state.dirty_storage[item[0]] = item[1]
+                state.destroyed_accounts[item[0]] -= Uint(1)
+                if state.destroyed_accounts[item[0]] == 0:
+                    state.dirty_storage[item[0]] = item[1]
+                    del state.destroyed_accounts[item[0]]
             else:
                 # Revert a change to an account
                 if item[1] is Unmodified:
@@ -311,7 +317,7 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
             transient_storage: Optional[Any] = None,
         ) -> None:
             """
-            See `state`
+            See `state`.
             """
             _rollback_transaction(state)
 
@@ -338,7 +344,7 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
         ):
             return state.dirty_storage[address][key]
 
-        if address in state.destroyed_accounts:
+        if state.destroyed_accounts[address]:
             return U256(0)
         else:
             return U256(state.db.get_storage(address, key))
@@ -410,7 +416,7 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
         See `state`.
         """
         state.journal.append((address, state.dirty_storage.pop(address, {})))
-        state.destroyed_accounts.add(address)
+        state.destroyed_accounts[address] += Uint(1)
         set_account(state, address, get_account_optional(state, address))
 
     @add_item(patches)
@@ -423,14 +429,14 @@ def get_optimized_state_patches(fork: str) -> Dict[str, Any]:
     @add_item(patches)
     def account_has_storage(state: State, address: Address) -> bool:
         """
-        See `state`
+        See `state`.
         """
         if address in state.dirty_storage:
             for v in state.dirty_storage[address].values():
                 if v != U256(0):
                     return True
 
-        if address in state.destroyed_accounts:
+        if state.destroyed_accounts[address]:
             return False
 
         return state.db.has_storage(address)

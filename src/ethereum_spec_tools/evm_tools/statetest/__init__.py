@@ -9,11 +9,11 @@ import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from io import StringIO
-from typing import Any, Dict, Iterable, List, Optional, TextIO
+from typing import Any, Dict, Generator, Iterable, List, Optional, TextIO
 
 from ethereum.utils.hexadecimal import hex_to_bytes
 
-from ..t8n import T8N
+from ..t8n import T8N, ForkCache
 from ..t8n.t8n_types import Result
 from ..utils import get_supported_forks
 
@@ -35,6 +35,41 @@ class TestCase:
     transaction: Dict
 
 
+def read_test_case(
+    test_file_path: str, key: str, test: Dict[str, Any]
+) -> Generator[TestCase, None, None]:
+    """
+    Given a key and a value, return a `TestCase` object.
+    """
+    env = test["env"]
+    if not isinstance(env, dict):
+        raise TypeError("env not dict")
+
+    pre = test["pre"]
+    if not isinstance(pre, dict):
+        raise TypeError("pre not dict")
+
+    transaction = test["transaction"]
+    if not isinstance(transaction, dict):
+        raise TypeError("transaction not dict")
+
+    for fork_name, content in test["post"].items():
+        for idx, post in enumerate(content):
+            if not isinstance(post, dict):
+                raise TypeError(f'post["{fork_name}"] not dict')
+
+            yield TestCase(
+                path=test_file_path,
+                key=key,
+                index=idx,
+                fork_name=fork_name,
+                post=post,
+                env=env,
+                pre=pre,
+                transaction=transaction,
+            )
+
+
 def read_test_cases(test_file_path: str) -> Iterable[TestCase]:
     """
     Given a path to a filled state test in JSON format, return all the
@@ -44,42 +79,17 @@ def read_test_cases(test_file_path: str) -> Iterable[TestCase]:
         tests = json.load(test_file)
 
     for key, test in tests.items():
-        env = test["env"]
-        if not isinstance(env, dict):
-            raise TypeError("env not dict")
-
-        pre = test["pre"]
-        if not isinstance(pre, dict):
-            raise TypeError("pre not dict")
-
-        transaction = test["transaction"]
-        if not isinstance(transaction, dict):
-            raise TypeError("transaction not dict")
-
-        for fork_name, content in test["post"].items():
-            for idx, post in enumerate(content):
-                if not isinstance(post, dict):
-                    raise TypeError(f'post["{fork_name}"] not dict')
-
-                yield TestCase(
-                    path=test_file_path,
-                    key=key,
-                    index=idx,
-                    fork_name=fork_name,
-                    post=post,
-                    env=env,
-                    pre=pre,
-                    transaction=transaction,
-                )
+        yield from read_test_case(test_file_path, key, test)
 
 
 def run_test_case(
     test_case: TestCase,
+    fork_cache: ForkCache,
     t8n_extra: Optional[List[str]] = None,
     output_basedir: Optional[str | TextIO] = None,
 ) -> Result:
     """
-    Runs a single general state test
+    Runs a single general state test.
     """
     from .. import create_parser
 
@@ -135,6 +145,7 @@ def run_test_case(
         "stdin",
         "--state.fork",
         f"{test_case.fork_name}",
+        "--state-test",
     ]
 
     if t8n_extra is not None:
@@ -145,8 +156,8 @@ def run_test_case(
     if output_basedir is not None:
         t8n_options.output_basedir = output_basedir
 
-    t8n = T8N(t8n_options, out_stream, in_stream)
-    t8n.apply_body()
+    t8n = T8N(t8n_options, out_stream, in_stream, fork_cache)
+    t8n.run_state_test()
     return t8n.result
 
 
@@ -211,12 +222,13 @@ class StateTest:
         stream_handler.setFormatter(formatter)
         logger.addHandler(stream_handler)
 
-        if self.file is None:
-            return self.run_many()
-        else:
-            return self.run_one(self.file)
+        with ForkCache() as fork_cache:
+            if self.file is None:
+                return self.run_many(fork_cache)
+            else:
+                return self.run_one(self.file, fork_cache)
 
-    def run_one(self, path: str) -> int:
+    def run_one(self, path: str, fork_cache: ForkCache) -> int:
         """
         Execute state tests from a single file.
         """
@@ -245,6 +257,7 @@ class StateTest:
 
             result = run_test_case(
                 test_case,
+                fork_cache,
                 t8n_extra=t8n_extra,
                 output_basedir=sys.stderr,
             )
@@ -268,9 +281,9 @@ class StateTest:
             if not passed:
                 actual = result.state_root.hex()
                 expected = test_case.post["hash"][2:]
-                result_dict[
-                    "error"
-                ] = f"post state root mismatch: got {actual}, want {expected}"
+                result_dict["error"] = (
+                    f"post state root mismatch: got {actual}, want {expected}"
+                )
 
             results.append(result_dict)
 
@@ -278,13 +291,13 @@ class StateTest:
         self.out_file.write("\n")
         return 0
 
-    def run_many(self) -> int:
+    def run_many(self, fork_cache: ForkCache) -> int:
         """
         Execute state tests from a line-delimited list of files provided from
         `self.in_file`.
         """
         for line in self.in_file:
-            result = self.run_one(line[:-1])
+            result = self.run_one(line[:-1], fork_cache)
             if result != 0:
                 return result
         return 0

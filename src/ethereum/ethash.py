@@ -26,9 +26,9 @@ At a high level, the Ethash algorithm is as follows:
 [mem-hard]: https://en.wikipedia.org/wiki/Memory-hard_function
 """
 
-from typing import Callable, Tuple, Union
+from typing import Callable, Tuple
 
-from ethereum_types.bytes import Bytes8
+from ethereum_types.bytes import Bytes, Bytes8
 from ethereum_types.numeric import U32, Uint, ulen
 
 from ethereum.crypto.hash import Hash32, Hash64, keccak256, keccak512
@@ -239,9 +239,8 @@ def generate_cache(block_number: Uint) -> Tuple[Tuple[U32, ...], ...]:
             second_cache_item = cache[
                 U32.from_le_bytes(cache[index][0:4]) % U32(cache_size_words)
             ]
-            result = bytes(
-                [a ^ b for a, b in zip(first_cache_item, second_cache_item)]
-            )
+            items = zip(first_cache_item, second_cache_item, strict=True)
+            result = Bytes([a ^ b for a, b in items])
             cache[index] = keccak512(result)
 
     return tuple(
@@ -249,7 +248,7 @@ def generate_cache(block_number: Uint) -> Tuple[Tuple[U32, ...], ...]:
     )
 
 
-def fnv(a: Union[Uint, U32], b: Union[Uint, U32]) -> U32:
+def fnv(a: Uint | U32, b: Uint | U32) -> U32:
     """
     A non-associative substitute for XOR, inspired by the [FNV] hash by Fowler,
     Noll, and Vo. See [`fnv_hash`], [`generate_dataset_item`], and
@@ -342,7 +341,7 @@ def hashimoto(
     nonce: Bytes8,
     dataset_size: Uint,
     fetch_dataset_item: Callable[[Uint], Tuple[U32, ...]],
-) -> Tuple[bytes, Hash32]:
+) -> Tuple[Bytes, Hash32]:
     """
     Obtain the mix digest and the final value for a header, by aggregating
     data from the full dataset.
@@ -363,7 +362,7 @@ def hashimoto(
 
     [`dataset_size`]: ref:ethereum.ethash.dataset_size
     """
-    nonce_le = bytes(reversed(nonce))
+    nonce_le = Bytes(reversed(nonce))
     seed_hash = keccak512(header_hash + nonce_le)
     seed_head = U32.from_le_bytes(seed_hash[:4])
 
@@ -397,7 +396,7 @@ def hashimoto_light(
     nonce: Bytes8,
     cache: Tuple[Tuple[U32, ...], ...],
     dataset_size: Uint,
-) -> Tuple[bytes, Hash32]:
+) -> Tuple[Bytes, Hash32]:
     """
     Run the [`hashimoto`] algorithm by generating dataset item using the cache
     instead of loading the full dataset into main memory.

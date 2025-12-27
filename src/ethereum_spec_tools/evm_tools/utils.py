@@ -1,9 +1,10 @@
 """
-Utilities for the EVM tools
+Utilities for the EVM tools.
 """
 
 import json
 import logging
+import re
 import sys
 from typing import (
     Any,
@@ -14,6 +15,7 @@ from typing import (
     Sequence,
     Tuple,
     TypeVar,
+    Union,
 )
 
 import coincurve
@@ -25,6 +27,9 @@ from ethereum_spec_tools.forks import Hardfork
 W = TypeVar("W", Uint, U64, U256)
 
 EXCEPTION_MAPS = {
+    "BPO4": {
+        "fork_blocks": [("osaka", 0)],
+    },
     "FrontierToHomesteadAt5": {
         "fork_blocks": [("frontier", 0), ("homestead", 5)],
     },
@@ -64,7 +69,7 @@ UNSUPPORTED_FORKS = ("constantinople",)
 
 
 def parse_hex_or_int(value: str, to_type: Callable[[int], W]) -> W:
-    """Read a Uint type from a hex string or int"""
+    """Read a Uint type from a hex string or int."""
     # find the function based on the type
     # if the value is a hex string, convert it
     if isinstance(value, str) and value.startswith("0x"):
@@ -74,26 +79,15 @@ def parse_hex_or_int(value: str, to_type: Callable[[int], W]) -> W:
         return to_type(int(value))
 
 
-class FatalException(Exception):
-    """Exception that causes the tool to stop"""
+class FatalError(Exception):
+    """Exception that causes the tool to stop."""
 
     pass
 
 
-def ensure_success(f: Callable, *args: Any) -> Any:
-    """
-    Ensure that the function call succeeds.
-    Raise a FatalException if it fails.
-    """
-    try:
-        return f(*args)
-    except Exception as e:
-        raise FatalException(e)
-
-
-def get_module_name(
+def find_fork(
     forks: Sequence[Hardfork], options: Any, stdin: Any
-) -> Tuple[str, int]:
+) -> Tuple[Hardfork, int | None]:
     """
     Get the module name and the fork block for the given state fork.
     """
@@ -105,6 +99,13 @@ def get_module_name(
         exception_config = EXCEPTION_MAPS[options.state_fork]
     except KeyError:
         pass
+
+    current_fork_block: None | int = None
+    current_fork_module = re.sub(
+        r"(?<!^)(?=[A-Z])",
+        "_",
+        options.state_fork,
+    ).lower()  # CamelCase to snake_case
 
     if exception_config:
         if options.input_env == "stdin":
@@ -121,15 +122,11 @@ def get_module_name(
                 current_fork_module = fork
                 current_fork_block = fork_block
 
-        return current_fork_module, current_fork_block
+    current_fork_module = re.sub("^b_p_o", "bpo", current_fork_module)
 
-    # If the state fork is not an exception, use the fork name.
     for fork in forks:
-        fork_module = fork.name.split(".")[-1]
-        key = "".join(x.title() for x in fork_module.split("_"))
-
-        if key == options.state_fork:
-            return fork_module, 0
+        if current_fork_module == fork.short_name:
+            return fork, current_fork_block
 
     # Neither in exception nor a standard fork name.
     sys.exit(f"Unsupported state fork: {options.state_fork}")
@@ -183,3 +180,15 @@ def secp256k1_sign(msg_hash: Hash32, secret_key: int) -> Tuple[U256, ...]:
         U256.from_be_bytes(signature[32:64]),
         U256(signature[64]),
     )
+
+
+def encode_to_hex(data: Union[bytes, int]) -> str:
+    """
+    Encode the data to a hex string.
+    """
+    if isinstance(data, int):
+        return hex(data)
+    elif isinstance(data, bytes):
+        return "0x" + data.hex()
+    else:
+        raise Exception("Invalid data type")

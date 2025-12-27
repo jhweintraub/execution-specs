@@ -1,6 +1,5 @@
 """
-Ethereum Sync
-^^^^^^^^^^^^^
+Ethereum Sync.
 
 Using an RPC provider, fetch each block and validate it with the specification.
 """
@@ -14,7 +13,7 @@ import shutil
 import time
 from queue import Empty, Full, Queue
 from threading import Thread
-from typing import Any, Dict, List, Optional, TypeVar, Union, cast
+from typing import Any, Dict, Final, List, Optional, TypeVar, Union, cast
 from urllib import request
 
 from ethereum_rlp import rlp
@@ -112,6 +111,7 @@ class BlockDownloader(ForkTracking):
     log: logging.Logger
     rpc_url: str
     geth: bool
+    headers: Final[dict[str, str]]
 
     def __init__(
         self,
@@ -121,6 +121,8 @@ class BlockDownloader(ForkTracking):
         geth: bool,
         first_block: Uint,
         first_block_timestamp: U256,
+        *,
+        headers: dict[str, str] | None = None,
     ) -> None:
         ForkTracking.__init__(self, forks, first_block, first_block_timestamp)
 
@@ -136,6 +138,11 @@ class BlockDownloader(ForkTracking):
         self.log = log
         self.rpc_url = rpc_url
         self.geth = geth
+
+        if headers is None:
+            headers = {}
+
+        self.headers = headers
 
         Thread(target=self.download, name="download", daemon=True).start()
 
@@ -222,14 +229,18 @@ class BlockDownloader(ForkTracking):
 
         self.log.debug("fetching blocks [%d, %d)...", first, first + count)
 
+        headers = {
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json",
+            "User-Agent": "ethereum-spec-sync",
+        }
+
+        headers.update(self.headers)
+
         post = request.Request(
             self.rpc_url,
             data=data,
-            headers={
-                "Content-Length": str(len(data)),
-                "Content-Type": "application/json",
-                "User-Agent": "ethereum-spec-sync",
-            },
+            headers=headers,
         )
 
         with request.urlopen(post) as response:
@@ -320,8 +331,8 @@ class BlockDownloader(ForkTracking):
                     self.module("transactions").AccessListTransaction(
                         hex_to_u64(t["chainId"]),
                         hex_to_u256(t["nonce"]),
-                        hex_to_u256(t["gasPrice"]),
-                        hex_to_u256(t["gas"]),
+                        hex_to_uint(t["gasPrice"]),
+                        hex_to_uint(t["gas"]),
                         self.module("utils.hexadecimal").hex_to_address(
                             t["to"]
                         )
@@ -340,9 +351,9 @@ class BlockDownloader(ForkTracking):
                     self.module("transactions").FeeMarketTransaction(
                         hex_to_u64(t["chainId"]),
                         hex_to_u256(t["nonce"]),
-                        hex_to_u256(t["maxPriorityFeePerGas"]),
-                        hex_to_u256(t["maxFeePerGas"]),
-                        hex_to_u256(t["gas"]),
+                        hex_to_uint(t["maxPriorityFeePerGas"]),
+                        hex_to_uint(t["maxFeePerGas"]),
+                        hex_to_uint(t["gas"]),
                         self.module("utils.hexadecimal").hex_to_address(
                             t["to"]
                         )
@@ -359,8 +370,8 @@ class BlockDownloader(ForkTracking):
             else:
                 return self.module("transactions").LegacyTransaction(
                     hex_to_u256(t["nonce"]),
-                    hex_to_u256(t["gasPrice"]),
-                    hex_to_u256(t["gas"]),
+                    hex_to_uint(t["gasPrice"]),
+                    hex_to_uint(t["gas"]),
                     self.module("utils.hexadecimal").hex_to_address(t["to"])
                     if t["to"]
                     else Bytes0(b""),
@@ -373,8 +384,8 @@ class BlockDownloader(ForkTracking):
         else:
             return self.module("transactions").Transaction(
                 hex_to_u256(t["nonce"]),
-                hex_to_u256(t["gasPrice"]),
-                hex_to_u256(t["gas"]),
+                hex_to_uint(t["gasPrice"]),
+                hex_to_uint(t["gas"]),
                 self.module("utils.hexadecimal").hex_to_address(t["to"])
                 if t["to"]
                 else Bytes0(b""),
@@ -413,14 +424,18 @@ class BlockDownloader(ForkTracking):
 
         self.log.debug("fetching blocks [%d, %d)...", first, first + count)
 
+        headers = {
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json",
+            "User-Agent": "ethereum-spec-sync",
+        }
+
+        headers.update(self.headers)
+
         post = request.Request(
             self.rpc_url,
             data=data,
-            headers={
-                "Content-Length": str(len(data)),
-                "Content-Type": "application/json",
-                "User-Agent": "ethereum-spec-sync",
-            },
+            headers=headers,
         )
 
         with request.urlopen(post) as response:
@@ -452,7 +467,7 @@ class BlockDownloader(ForkTracking):
                     ommers_needed[reply_id] = len(res["uncles"])
 
             ommers = self.fetch_ommers(ommers_needed)
-            for id in block_jsons:
+            for id in block_jsons:  # noqa A001
                 self.advance_block(hex_to_u256(block_jsons[id]["timestamp"]))
                 blocks[id] = self.make_block(
                     block_jsons[id], ommers.get(id, ())
@@ -490,14 +505,18 @@ class BlockDownloader(ForkTracking):
             max(ommers_needed),
         )
 
+        headers = {
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json",
+            "User-Agent": "ethereum-spec-sync",
+        }
+
+        headers.update(self.headers)
+
         post = request.Request(
             self.rpc_url,
             data=data,
-            headers={
-                "Content-Length": str(len(data)),
-                "Content-Type": "application/json",
-                "User-Agent": "ethereum-spec-sync",
-            },
+            headers=headers,
         )
 
         with request.urlopen(post) as response:
@@ -517,9 +536,9 @@ class BlockDownloader(ForkTracking):
                         reply["error"]["message"],
                     )
                 else:
-                    ommers[reply_id // twenty][
-                        reply_id % twenty
-                    ] = self.make_header(reply["result"])
+                    ommers[reply_id // twenty][reply_id % twenty] = (
+                        self.make_header(reply["result"])
+                    )
 
             self.log.info(
                 "ommers [%d, %d] fetched",
@@ -593,37 +612,6 @@ class BlockDownloader(ForkTracking):
             *extra_fields,
         )
 
-    def download_chain_id(self) -> U64:
-        """
-        Fetch the chain id of the executing chain from the rpc provider.
-        """
-        call = [
-            {
-                "jsonrpc": "2.0",
-                "id": hex(2),
-                "method": "eth_chainId",
-                "params": [],
-            }
-        ]
-        data = json.dumps(call).encode("utf-8")
-
-        post = request.Request(
-            self.rpc_url,
-            data=data,
-            headers={
-                "Content-Length": str(len(data)),
-                "Content-Type": "application/json",
-                "User-Agent": "ethereum-spec-sync",
-            },
-        )
-
-        with request.urlopen(post) as response:
-            reply = json.load(response)[0]
-            assert reply["id"] == hex(2)
-            chain_id = U64(int(reply["result"], 16))
-
-        return chain_id
-
 
 class Sync(ForkTracking):
     """
@@ -695,17 +683,25 @@ class Sync(ForkTracking):
         )
         parser.add_argument(
             "--zhejiang",
-            help="Set the chain to mainnet",
+            help="Set the chain to zhejiang",
             action="store_const",
             dest="chain",
             const="zhejiang",
         )
         parser.add_argument(
             "--sepolia",
-            help="Set the chain to mainnet",
+            help="Set the chain to sepolia",
             action="store_const",
             dest="chain",
             const="sepolia",
+        )
+        parser.add_argument(
+            "--header",
+            "-H",
+            help="Add a header to RPC requests",
+            nargs=2,
+            action="append",
+            dest="headers",
         )
 
         return parser.parse_args()
@@ -718,6 +714,10 @@ class Sync(ForkTracking):
     def __init__(self) -> None:
         self.log = logging.getLogger(__name__)
         self.options = self.parse_arguments()
+
+        headers = None
+        if self.options.headers is not None:
+            headers = dict(self.options.headers)
 
         if not self.options.unoptimized:
             import ethereum_optimized
@@ -837,6 +837,7 @@ class Sync(ForkTracking):
                 self.options.geth,
                 Uint(0),
                 genesis_configuration.timestamp,
+                headers=headers,
             )
             self.set_block(Uint(0), genesis_configuration.timestamp)
         else:
@@ -852,6 +853,7 @@ class Sync(ForkTracking):
                 self.options.geth,
                 persisted_block - initial_blocks_length,
                 persisted_block_timestamp,
+                headers=headers,
             )
             blocks = []
             for _ in range(initial_blocks_length):
